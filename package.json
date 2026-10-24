@@ -2,11 +2,9 @@
   "name": "sentinel-firewall-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "AI-based firewall monitoring dashboard using VirusTotal API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18.17"
