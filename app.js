@@ -9,9 +9,17 @@ const state = {
 const $ = id => document.getElementById(id);
 
 
-// Display notification messages
+// --------------------------------------------------
+// Notifications
+// --------------------------------------------------
+
 function toast(message) {
     const node = $("toast");
+
+    if (!node) {
+        console.log(message);
+        return;
+    }
 
     node.textContent = message;
     node.classList.add("show");
@@ -20,11 +28,14 @@ function toast(message) {
 
     toast.timer = setTimeout(() => {
         node.classList.remove("show");
-    }, 3500);
+    }, 4000);
 }
 
 
-// Escape HTML before displaying server-provided values
+// --------------------------------------------------
+// Safe HTML output
+// --------------------------------------------------
+
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, character => ({
         "&": "&amp;",
@@ -36,15 +47,24 @@ function escapeHtml(value) {
 }
 
 
+// --------------------------------------------------
 // Navigation
+// --------------------------------------------------
+
 function switchView(view) {
+    const target = $(`${view}-view`);
+
+    if (!target) {
+        return;
+    }
+
     state.view = view;
 
     document.querySelectorAll(".view").forEach(section => {
         section.classList.add("hidden");
     });
 
-    $(`${view}-view`).classList.remove("hidden");
+    target.classList.remove("hidden");
 
     document.querySelectorAll(".nav-item").forEach(button => {
         button.classList.toggle(
@@ -67,7 +87,10 @@ function switchView(view) {
 }
 
 
-// Switch between File, URL and Search tabs
+// --------------------------------------------------
+// Scanner tabs
+// --------------------------------------------------
+
 function setTab(tab) {
     state.activeTab = tab;
 
@@ -79,23 +102,26 @@ function setTab(tab) {
     });
 
     ["file", "url", "search"].forEach(name => {
-        const quickForm = $(`quick-${name}`);
-        const wideForm = $(`wide-${name}`);
+        const quick = $(`quick-${name}`);
+        const wide = $(`wide-${name}`);
 
-        if (quickForm) {
-            quickForm.classList.toggle("hidden", name !== tab);
+        if (quick) {
+            quick.classList.toggle("hidden", name !== tab);
         }
 
-        if (wideForm) {
-            wideForm.classList.toggle("hidden", name !== tab);
+        if (wide) {
+            wide.classList.toggle("hidden", name !== tab);
         }
     });
 
-    $("result-area").classList.add("hidden");
+    $("result-area")?.classList.add("hidden");
 }
 
 
-// Format dates
+// --------------------------------------------------
+// Date formatting
+// --------------------------------------------------
+
 function formatDate(date) {
     return new Intl.DateTimeFormat(undefined, {
         month: "short",
@@ -106,34 +132,76 @@ function formatDate(date) {
 }
 
 
-// Determine displayed status
+// --------------------------------------------------
+// Verdict classification
+// --------------------------------------------------
+
 function verdict(item) {
     if (item.error) {
-        return { label: "Error", cls: "error" };
+        return {
+            label: "Error",
+            cls: "error"
+        };
     }
 
     if (item.status === "pending") {
-        return { label: "Pending", cls: "pending" };
+        return {
+            label: "Pending",
+            cls: "pending"
+        };
     }
 
-    if (item.malicious > 0 || item.suspicious > 0) {
-        return { label: "Flagged", cls: "flagged" };
+    if (item.malicious > 0) {
+        return {
+            label: "Malicious",
+            cls: "flagged"
+        };
+    }
+
+    if (item.suspicious > 0) {
+        return {
+            label: "Suspicious",
+            cls: "flagged"
+        };
     }
 
     if (item.status === "complete") {
-        return { label: "No detections", cls: "clean" };
+        return {
+            label: "No detections",
+            cls: "clean"
+        };
     }
 
-    return { label: "Submitted", cls: "pending" };
+    return {
+        label: "Submitted",
+        cls: "pending"
+    };
 }
 
 
-// Add a scan to browser-session history
+// --------------------------------------------------
+// Scan history
+// --------------------------------------------------
+
 function addHistory(item) {
-    state.history.unshift({
+    const existing = state.history.findIndex(
+        entry => entry.id && entry.id === item.id
+    );
+
+    const updated = {
         ...item,
-        timestamp: new Date().toISOString()
-    });
+        timestamp:
+            item.timestamp || new Date().toISOString()
+    };
+
+    if (existing >= 0) {
+        state.history[existing] = {
+            ...state.history[existing],
+            ...updated
+        };
+    } else {
+        state.history.unshift(updated);
+    }
 
     state.history = state.history.slice(0, 50);
 
@@ -146,7 +214,10 @@ function addHistory(item) {
 }
 
 
-// Update dashboard metrics
+// --------------------------------------------------
+// Dashboard statistics
+// --------------------------------------------------
+
 function renderMetrics() {
     $("metric-total").textContent = state.history.length;
 
@@ -161,27 +232,33 @@ function renderMetrics() {
     $("metric-flagged").textContent =
         state.history.filter(item =>
             !item.error &&
-            (item.malicious > 0 || item.suspicious > 0)
+            (
+                item.malicious > 0 ||
+                item.suspicious > 0
+            )
         ).length;
 
     $("metric-pending").textContent =
         state.history.filter(item =>
             item.error ||
             item.status === "pending" ||
-            item.status !== "complete"
+            item.status === "error"
         ).length;
 }
 
 
-// Build a history row
+// --------------------------------------------------
+// Activity rows
+// --------------------------------------------------
+
 function activityMarkup(item) {
     const status = verdict(item);
 
-    const icon = {
+    const icons = {
         file: "▤",
         url: "↗",
         search: "⌕"
-    }[item.kind] || "•";
+    };
 
     const name =
         item.name ||
@@ -189,16 +266,11 @@ function activityMarkup(item) {
         item.url ||
         "Scan";
 
-    const detectionText =
-        item.malicious != null
-            ? ` · ${item.malicious} malicious`
-            : "";
-
     return `
         <div class="activity-item">
 
             <div class="activity-symbol">
-                ${icon}
+                ${icons[item.kind] || "•"}
             </div>
 
             <div class="activity-meta">
@@ -208,9 +280,13 @@ function activityMarkup(item) {
                 </b>
 
                 <small>
-                    ${escapeHtml(item.kind.toUpperCase())}
+                    ${escapeHtml((item.kind || "scan").toUpperCase())}
                     · ${escapeHtml(formatDate(item.timestamp))}
-                    ${detectionText}
+                    ${
+                        item.malicious !== undefined
+                        ? ` · ${item.malicious} malicious`
+                        : ""
+                    }
                 </small>
 
             </div>
@@ -224,7 +300,10 @@ function activityMarkup(item) {
 }
 
 
-// Render recent scans
+// --------------------------------------------------
+// Render history lists
+// --------------------------------------------------
+
 function renderRecent() {
     const items = state.history.slice(0, 5);
 
@@ -238,7 +317,6 @@ function renderRecent() {
 }
 
 
-// Render complete session history
 function renderHistory() {
     $("history-list").innerHTML = state.history.length
         ? state.history.map(activityMarkup).join("")
@@ -250,31 +328,336 @@ function renderHistory() {
 }
 
 
-// Send API request to backend
-async function requestJson(path, options = {}) {
-    const response = await fetch(`${API_BASE}${path}`, options);
+// --------------------------------------------------
+// API request helper
+// --------------------------------------------------
 
-    const payload = await response.json().catch(() => ({}));
+async function requestJson(path, options = {}) {
+    const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+            ...(options.headers || {})
+        }
+    });
+
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
         throw new Error(
-            payload.error ||
-            `Server returned HTTP ${response.status}`
+            data.error ||
+            `Request failed with HTTP ${response.status}`
         );
     }
 
-    return payload;
+    return data;
 }
 
 
-// Display VirusTotal analysis statistics
-function renderResult(data, kind, label) {
+// --------------------------------------------------
+// Extract VirusTotal analysis information
+// --------------------------------------------------
+
+function extractAnalysis(data) {
     const attributes =
         data?.data?.attributes ||
         data?.attributes ||
         {};
 
-    const stats = attributes.last_analysis_stats || {};
+    const stats =
+        attributes.stats ||
+        attributes.last_analysis_stats ||
+        {};
+
+    return {
+        status: attributes.status || "queued",
+
+        malicious: Number(stats.malicious || 0),
+
+        suspicious: Number(stats.suspicious || 0),
+
+        harmless: Number(stats.harmless || 0),
+
+        undetected: Number(stats.undetected || 0),
+
+        stats
+    };
+}
+
+
+// --------------------------------------------------
+// Wait for VirusTotal analysis completion
+// --------------------------------------------------
+
+async function pollAnalysis(analysisId, kind, label, historyId) {
+    const maxAttempts = 12;
+    const delayMs = 5000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+
+        let analysis;
+
+        try {
+            analysis = await requestJson(
+                `/analysis/${encodeURIComponent(analysisId)}`
+            );
+        } catch (error) {
+            // A temporary failure should not erase the submission.
+            if (attempt === maxAttempts - 1) {
+                throw error;
+            }
+
+            continue;
+        }
+
+        const result = extractAnalysis(analysis);
+
+        if (result.status === "completed") {
+            return result;
+        }
+
+        updatePendingHistory(historyId, {
+            status: "pending",
+            name: label,
+            kind,
+            analysisId
+        });
+    }
+
+    // The analysis may still be processing. The report endpoints
+    // can sometimes provide an already-existing report.
+    return await tryExistingReport(kind, label, historyId, analysisId);
+}
+
+
+// --------------------------------------------------
+// Try retrieving an existing report
+// --------------------------------------------------
+
+async function tryExistingReport(kind, label, historyId, analysisId) {
+    const entry = state.history.find(
+        item => item.id === historyId
+    );
+
+    if (kind === "file" && entry?.sha256) {
+        try {
+            const report = await requestJson(
+                `/report/file/${encodeURIComponent(entry.sha256)}`
+            );
+
+            return extractAnalysis(report);
+        } catch {
+            // Keep the original pending status if no report is available.
+        }
+    }
+
+    if (kind === "url" && entry?.urlId) {
+        try {
+            const report = await requestJson(
+                `/report/url/${encodeURIComponent(entry.urlId)}`
+            );
+
+            return extractAnalysis(report);
+        } catch {
+            // The report may not be available yet.
+        }
+    }
+
+    updatePendingHistory(historyId, {
+        status: "pending",
+        kind,
+        name: label,
+        analysisId
+    });
+
+    return null;
+}
+
+
+// --------------------------------------------------
+// Update an existing pending record
+// --------------------------------------------------
+
+function updatePendingHistory(id, values) {
+    const entry = state.history.find(item => item.id === id);
+
+    if (!entry) {
+        return;
+    }
+
+    Object.assign(entry, values);
+
+    renderMetrics();
+    renderRecent();
+
+    if (state.view === "history") {
+        renderHistory();
+    }
+}
+
+
+// --------------------------------------------------
+// Get the final file or URL report
+// --------------------------------------------------
+
+async function fetchFinalReport(kind, submission, label, historyId) {
+    const analysisId = submission?.data?.id;
+
+    if (!analysisId) {
+        throw new Error(
+            "VirusTotal did not return an analysis ID."
+        );
+    }
+
+    const initialAttributes =
+        submission?.data?.attributes || {};
+
+    const sha256 =
+        initialAttributes.sha256 ||
+        "";
+
+    const urlId =
+        kind === "url"
+            ? initialAttributes.url_id || ""
+            : "";
+
+    updatePendingHistory(historyId, {
+        analysisId,
+        sha256,
+        urlId
+    });
+
+    const analysis = await pollAnalysis(
+        analysisId,
+        kind,
+        label,
+        historyId
+    );
+
+    // If the analysis is still pending, do not display zeros
+    // as if they were a completed security verdict.
+    if (!analysis) {
+        renderPendingResult(label, analysisId, historyId);
+        return;
+    }
+
+    // A completed analysis may contain stats directly.
+    // Fetch the object report for additional file/URL metadata.
+    let report = null;
+
+    const entry = state.history.find(
+        item => item.id === historyId
+    );
+
+    if (kind === "file" && entry?.sha256) {
+        try {
+            report = await requestJson(
+                `/report/file/${encodeURIComponent(entry.sha256)}`
+            );
+        } catch {
+            // Use completed analysis statistics if available.
+        }
+    }
+
+    if (kind === "url" && entry?.urlId) {
+        try {
+            report = await requestJson(
+                `/report/url/${encodeURIComponent(entry.urlId)}`
+            );
+        } catch {
+            // Use completed analysis statistics if available.
+        }
+    }
+
+    const finalData = report || submission;
+
+    const finalStats = report
+        ? extractAnalysis(finalData)
+        : analysis;
+
+    renderCompletedResult(
+        finalData,
+        finalStats,
+        kind,
+        label,
+        analysisId,
+        historyId
+    );
+}
+
+
+// --------------------------------------------------
+// Render pending analysis
+// --------------------------------------------------
+
+function renderPendingResult(label, analysisId, historyId) {
+    updatePendingHistory(historyId, {
+        status: "pending",
+        malicious: undefined,
+        suspicious: undefined,
+        harmless: undefined,
+        undetected: undefined,
+        analysisId
+    });
+
+    const resultArea = $("result-area");
+
+    resultArea.classList.remove("hidden");
+
+    resultArea.innerHTML = `
+        <div class="result-summary">
+
+            <div>
+                <p class="eyebrow">ANALYSIS IN PROGRESS</p>
+
+                <h3>${escapeHtml(label)}</h3>
+
+                <p>
+                    VirusTotal has not completed this analysis yet.
+                    No final verdict is available.
+                </p>
+            </div>
+
+            <span class="badge pending">Pending</span>
+
+        </div>
+
+        <p class="result-details">
+            Analysis ID:
+            <code>${escapeHtml(analysisId)}</code>
+        </p>
+
+        <p class="result-details">
+            You can check the result directly on VirusTotal.
+        </p>
+
+        <a
+            href="https://www.virustotal.com/gui/analyses/${encodeURIComponent(analysisId)}"
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+            Open analysis in VirusTotal ↗
+        </a>
+    `;
+}
+
+
+// --------------------------------------------------
+// Render completed results
+// --------------------------------------------------
+
+function renderCompletedResult(
+    data,
+    stats,
+    kind,
+    label,
+    analysisId,
+    historyId
+) {
+    const attributes =
+        data?.data?.attributes ||
+        data?.attributes ||
+        {};
 
     const malicious = Number(stats.malicious || 0);
     const suspicious = Number(stats.suspicious || 0);
@@ -287,34 +670,35 @@ function renderResult(data, kind, label) {
         harmless +
         undetected;
 
-    const analysisId = data?.data?.id || "";
+    const sha256 =
+        attributes.sha256 ||
+        state.history.find(item => item.id === historyId)?.sha256 ||
+        "";
 
-    const resultType =
-        kind === "file" ? "file" :
-        kind === "url" ? "url" :
-        "search";
+    const resultId =
+        data?.data?.id ||
+        analysisId;
 
-    const analysisUrl = analysisId
-        ? `https://www.virustotal.com/gui/${resultType}/${encodeURIComponent(analysisId)}`
-        : "";
+    const guiType =
+        kind === "file"
+            ? "file"
+            : "url";
 
-    const hasStats =
-        Object.keys(stats).length > 0;
+    const guiUrl =
+        kind === "url" && resultId
+            ? `https://www.virustotal.com/gui/url/${encodeURIComponent(resultId)}`
+            : kind === "file" && sha256
+                ? `https://www.virustotal.com/gui/file/${encodeURIComponent(sha256)}`
+                : `https://www.virustotal.com/gui/analyses/${encodeURIComponent(analysisId)}`;
 
-    const status = hasStats ? "complete" : "pending";
-
-    addHistory({
-        kind,
-        name: label,
-        query: kind === "search" ? label : undefined,
-        url: kind === "url" ? label : undefined,
-        status,
+    updatePendingHistory(historyId, {
+        status: "complete",
         malicious,
         suspicious,
         harmless,
         undetected,
         analysisId,
-        analysisUrl
+        sha256
     });
 
     $("result-area").classList.remove("hidden");
@@ -323,21 +707,17 @@ function renderResult(data, kind, label) {
         <div class="result-summary">
 
             <div>
-                <p class="eyebrow">ANALYSIS RESULT</p>
+                <p class="eyebrow">COMPLETED ANALYSIS</p>
 
                 <h3>${escapeHtml(label)}</h3>
 
                 <p>
-                    ${
-                        hasStats
-                        ? "Analysis statistics returned by VirusTotal."
-                        : "Submission received. The completed report may not be available yet."
-                    }
+                    Results returned by VirusTotal.
                 </p>
             </div>
 
             <div class="result-count">
-                ${total ? `${malicious + suspicious}/${total}` : "Pending"}
+                ${malicious + suspicious}/${total}
 
                 <small>malicious / engines</small>
             </div>
@@ -377,24 +757,30 @@ function renderResult(data, kind, label) {
         <div class="result-details">
 
             ${
+                sha256
+                ? `SHA-256: <code>${escapeHtml(sha256)}</code><br>`
+                : ""
+            }
+
+            ${
                 analysisId
                 ? `Analysis ID: <code>${escapeHtml(analysisId)}</code><br>`
                 : ""
             }
 
-            ${
-                analysisUrl
-                ? `<a href="${analysisUrl}" target="_blank" rel="noopener noreferrer">
-                    Open in VirusTotal ↗
-                   </a>`
-                : ""
-            }
+            <a
+                href="${guiUrl}"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                Open in VirusTotal ↗
+            </a>
 
             <br>
 
             <small>
-                Detection counts are third-party results and do not
-                guarantee that a file or URL is safe.
+                A zero-detection result is not a guarantee that
+                the file or URL is safe.
             </small>
 
         </div>
@@ -407,18 +793,29 @@ function renderResult(data, kind, label) {
 }
 
 
-// Display request errors
-function showApiError(error, kind, label) {
-    const message = error.message || "Request failed.";
+// --------------------------------------------------
+// Error display
+// --------------------------------------------------
 
-    addHistory({
-        kind,
-        name: label,
-        status: "error",
-        error: message,
-        malicious: 0,
-        suspicious: 0
-    });
+function showApiError(error, kind, label, historyId) {
+    const message =
+        error.message ||
+        "The request failed.";
+
+    if (historyId) {
+        updatePendingHistory(historyId, {
+            status: "error",
+            error: message
+        });
+    } else {
+        addHistory({
+            id: crypto.randomUUID(),
+            kind,
+            name: label,
+            status: "error",
+            error: message
+        });
+    }
 
     $("result-area").classList.remove("hidden");
 
@@ -427,6 +824,7 @@ function showApiError(error, kind, label) {
 
             <div>
                 <p class="eyebrow">REQUEST FAILED</p>
+
                 <h3>${escapeHtml(label)}</h3>
 
                 <p class="result-details">
@@ -439,16 +837,18 @@ function showApiError(error, kind, label) {
         </div>
 
         <p>
-            Check the backend server, API key and
-            your VirusTotal API permissions.
+            Check your connection, Render deployment logs,
+            API key and VirusTotal API permissions.
         </p>
     `;
 
     toast(message);
 }
 
+// --------------------------------------------------
+// File scanning
+// --------------------------------------------------
 
-// Submit a file to VirusTotal
 async function scanFile(file) {
     if (!file) {
         toast("Please select a file first.");
@@ -458,34 +858,59 @@ async function scanFile(file) {
     const MAX_SIZE = 32 * 1024 * 1024;
 
     if (file.size > MAX_SIZE) {
-        toast("The demo supports files up to 32 MB.");
+        toast("The maximum supported file size is 32 MB.");
         return;
     }
 
     const label = file.name;
 
+    const historyId = crypto.randomUUID();
+
+    addHistory({
+        id: historyId,
+        kind: "file",
+        name: label,
+        status: "pending",
+        size: file.size
+    });
+
+    $("result-area").classList.remove("hidden");
+
+    $("result-area").innerHTML = `
+        <div class="empty-state">
+            Uploading ${escapeHtml(label)} to VirusTotal...
+        </div>
+    `;
+
     const formData = new FormData();
+
     formData.append("file", file);
 
-    toast("Uploading file for analysis...");
-
     try {
-        const data = await requestJson("/scan/file", {
+        const submission = await requestJson("/scan/file", {
             method: "POST",
             body: formData
         });
 
-        renderResult(data, "file", label);
+        toast("File submitted. Waiting for analysis...");
 
-        toast("File submitted to VirusTotal.");
+        await fetchFinalReport(
+            "file",
+            submission,
+            label,
+            historyId
+        );
 
     } catch (error) {
-        showApiError(error, "file", label);
+        showApiError(error, "file", label, historyId);
     }
 }
 
 
-// Submit a URL to VirusTotal
+// --------------------------------------------------
+// URL scanning
+// --------------------------------------------------
+
 async function scanUrl(value) {
     const url = value.trim();
 
@@ -494,10 +919,26 @@ async function scanUrl(value) {
         return;
     }
 
-    try {
-        toast("Submitting URL...");
+    const historyId = crypto.randomUUID();
 
-        const data = await requestJson("/scan/url", {
+    addHistory({
+        id: historyId,
+        kind: "url",
+        name: url,
+        url,
+        status: "pending"
+    });
+
+    $("result-area").classList.remove("hidden");
+
+    $("result-area").innerHTML = `
+        <div class="empty-state">
+            Submitting URL to VirusTotal...
+        </div>
+    `;
+
+    try {
+        const submission = await requestJson("/scan/url", {
             method: "POST",
 
             headers: {
@@ -507,22 +948,30 @@ async function scanUrl(value) {
             body: JSON.stringify({ url })
         });
 
-        renderResult(data, "url", url);
+        toast("URL submitted. Waiting for analysis...");
 
-        toast("URL submitted to VirusTotal.");
+        await fetchFinalReport(
+            "url",
+            submission,
+            url,
+            historyId
+        );
 
     } catch (error) {
-        showApiError(error, "url", url);
+        showApiError(error, "url", url, historyId);
     }
 }
 
 
-// Search VirusTotal Intelligence
+// --------------------------------------------------
+// VirusTotal Intelligence search
+// --------------------------------------------------
+
 async function searchQuery(value) {
     const query = value.trim();
 
     if (!query) {
-        toast("Enter a search query first.");
+        toast("Enter a search query.");
         return;
     }
 
@@ -533,18 +982,17 @@ async function searchQuery(value) {
             `/search?q=${encodeURIComponent(query)}`
         );
 
-        const items = data.data || [];
+        const items = Array.isArray(data.data)
+            ? data.data
+            : [];
 
         addHistory({
+            id: crypto.randomUUID(),
             kind: "search",
             name: `${query} (${items.length} results)`,
             query,
-            status: "complete",
-            malicious: 0,
-            suspicious: 0
+            status: "complete"
         });
-
-        $("result-area").classList.remove("hidden");
 
         const resultHtml = items.slice(0, 20).map(item => {
             const attributes = item.attributes || {};
@@ -556,6 +1004,16 @@ async function searchQuery(value) {
                 attributes.name ||
                 id;
 
+            let guiType = "files";
+
+            if (type === "url") {
+                guiType = "url";
+            } else if (type === "domain") {
+                guiType = "domain";
+            } else if (type === "ip_address") {
+                guiType = "ip-address";
+            }
+
             return `
                 <div class="activity-item">
 
@@ -566,13 +1024,14 @@ async function searchQuery(value) {
                         <b>${escapeHtml(name)}</b>
 
                         <small>
-                            ${escapeHtml(type)} · ${escapeHtml(id)}
+                            ${escapeHtml(type)}
+                            · ${escapeHtml(id)}
                         </small>
 
                     </div>
 
                     <a
-                        href="https://www.virustotal.com/gui/${encodeURIComponent(type)}/${encodeURIComponent(id)}"
+                        href="https://www.virustotal.com/gui/${guiType}/${encodeURIComponent(id)}"
                         target="_blank"
                         rel="noopener noreferrer"
                     >
@@ -582,6 +1041,8 @@ async function searchQuery(value) {
                 </div>
             `;
         }).join("");
+
+        $("result-area").classList.remove("hidden");
 
         $("result-area").innerHTML = `
             <div class="result-summary">
@@ -617,15 +1078,18 @@ async function searchQuery(value) {
 }
 
 
-// Check backend health
+// --------------------------------------------------
+// Backend health check
+// --------------------------------------------------
+
 async function checkHealth() {
     try {
         const data = await requestJson("/health");
 
         $("service-status").textContent =
             data.apiKeyConfigured
-            ? "Online · API key configured"
-            : "Online · API key missing";
+                ? "Online · API key configured"
+                : "Online · API key missing";
 
     } catch {
         $("service-status").textContent =
@@ -634,7 +1098,10 @@ async function checkHealth() {
 }
 
 
-// Navigation buttons
+// --------------------------------------------------
+// Event listeners: navigation
+// --------------------------------------------------
+
 document.querySelectorAll("[data-view]").forEach(button => {
     button.addEventListener("click", () => {
         switchView(button.dataset.view);
@@ -648,7 +1115,10 @@ document.querySelectorAll("[data-open-scanner]").forEach(button => {
 });
 
 
-// Tab buttons
+// --------------------------------------------------
+// Event listeners: tabs
+// --------------------------------------------------
+
 document.querySelectorAll(".scan-tab").forEach(button => {
     button.addEventListener("click", () => {
         setTab(button.dataset.tab);
@@ -656,19 +1126,27 @@ document.querySelectorAll(".scan-tab").forEach(button => {
 });
 
 
-// File selection labels
+// --------------------------------------------------
+// File selection
+// --------------------------------------------------
+
 $("file-input").addEventListener("change", event => {
     $("file-name").textContent =
-        event.target.files[0]?.name || "No file selected";
+        event.target.files[0]?.name ||
+        "No file selected";
 });
 
 $("wide-file-input").addEventListener("change", event => {
     $("wide-file-name").textContent =
-        event.target.files[0]?.name || "No file selected";
+        event.target.files[0]?.name ||
+        "No file selected";
 });
 
 
+// --------------------------------------------------
 // File scan buttons
+// --------------------------------------------------
+
 $("file-scan-btn").addEventListener("click", () => {
     scanFile($("file-input").files[0]);
 });
@@ -678,31 +1156,44 @@ $("wide-file-scan-btn").addEventListener("click", () => {
 });
 
 
+// --------------------------------------------------
 // URL forms
+// --------------------------------------------------
+
 $("quick-url").addEventListener("submit", event => {
     event.preventDefault();
+
     scanUrl($("url-input").value);
 });
 
 $("wide-url").addEventListener("submit", event => {
     event.preventDefault();
+
     scanUrl($("wide-url-input").value);
 });
 
 
+// --------------------------------------------------
 // Search forms
+// --------------------------------------------------
+
 $("quick-search").addEventListener("submit", event => {
     event.preventDefault();
+
     searchQuery($("search-input").value);
 });
 
 $("wide-search").addEventListener("submit", event => {
     event.preventDefault();
+
     searchQuery($("wide-search-input").value);
 });
 
 
+// --------------------------------------------------
 // Clear history
+// --------------------------------------------------
+
 $("clear-history").addEventListener("click", () => {
     state.history = [];
 
@@ -714,8 +1205,13 @@ $("clear-history").addEventListener("click", () => {
 });
 
 
+// --------------------------------------------------
 // Initialise dashboard
+// --------------------------------------------------
+
 setTab("file");
+
 renderMetrics();
 renderRecent();
+
 checkHealth();
