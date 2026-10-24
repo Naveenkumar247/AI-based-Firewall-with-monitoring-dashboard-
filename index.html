@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sentinel - Firewall Monitoring Dashboard</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="app-shell">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+        <div class="brand">
+            <div class="brand-logo">S</div>
+
+            <div>
+                <h2>SENTINEL</h2>
+                <small>FIREWALL INTELLIGENCE</small>
+            </div>
+        </div>
+
+        <p class="nav-heading">WORKSPACE</p>
+
+        <button class="nav-item active" data-view="overview">
+            ◫ Overview
+        </button>
+
+        <button class="nav-item" data-view="scanner">
+            ⌕ Threat Scanner
+        </button>
+
+        <button class="nav-item" data-view="history">
+            ◷ Scan History
+        </button>
+
+        <div class="service-card">
+            <span class="live-dot"></span>
+
+            <div>
+                <strong>Scanner Service</strong>
+                <small id="service-status">Checking service...</small>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            AI-Based Firewall Monitoring<br>
+            Dashboard with VPN
+        </div>
+
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">SECURITY OPERATIONS CENTER</p>
+                <h1 id="page-title">Overview</h1>
+            </div>
+
+            <div class="api-status">
+                <span class="live-dot"></span>
+                VirusTotal API
+            </div>
+        </header>
+
+        <!-- Overview -->
+        <section id="overview-view" class="view">
+
+            <div class="welcome-row">
+                <div>
+                    <h2>Threat Monitoring</h2>
+                    <p>
+                        Scan files and URLs, search threat intelligence,
+                        and review analysis results.
+                    </p>
+                </div>
+
+                <button class="primary-btn" data-open-scanner>
+                    + New Scan
+                </button>
+            </div>
+
+            <!-- Statistics -->
+            <div class="metrics-grid">
+
+                <div class="metric-card">
+                    <span>Total Scans</span>
+                    <h2 id="metric-total">0</h2>
+                    <small>Current browser session</small>
+                </div>
+
+                <div class="metric-card">
+                    <span>Clean Results</span>
+                    <h2 id="metric-clean">0</h2>
+                    <small>No detections reported</small>
+                </div>
+
+                <div class="metric-card">
+                    <span>Flagged Results</span>
+                    <h2 id="metric-flagged">0</h2>
+                    <small>Malicious or suspicious</small>
+                </div>
+
+                <div class="metric-card">
+                    <span>Pending / Errors</span>
+                    <h2 id="metric-pending">0</h2>
+                    <small>Pending or failed scans</small>
+                </div>
+
+            </div>
+
+            <!-- Scanner -->
+            <div class="content-grid">
+
+                <div class="panel">
+
+                    <div class="panel-heading">
+                        <div>
+                            <h3>Quick Scan</h3>
+                            <p>Select an analysis method.</p>
+                        </div>
+                    </div>
+
+                    <div class="scan-tabs">
+                        <button class="scan-tab active" data-tab="file">
+                            File
+                        </button>
+
+                        <button class="scan-tab" data-tab="url">
+                            URL
+                        </button>
+
+                        <button class="scan-tab" data-tab="search">
+                            Search
+                        </button>
+                    </div>
+
+                    <!-- File Form -->
+                    <div id="quick-file" class="scan-form">
+
+                        <label class="dropzone" for="file-input">
+                            <span class="upload-icon">↑</span>
+
+                            <strong>Choose a file</strong>
+
+                            <small>
+                                Submit a file to VirusTotal for analysis.
+                            </small>
+
+                            <span id="file-name">
+                                No file selected
+                            </span>
+                        </label>
+
+                        <input type="file" id="file-input">
+
+                        <button class="primary-btn full-width"
+                                id="file-scan-btn">
+                            Scan File
+                        </button>
+
+                    </div>
+
+                    <!-- URL Form -->
+                    <form id="quick-url" class="scan-form hidden">
+
+                        <label for="url-input">Website URL</label>
+
+                        <input
+                            type="url"
+                            id="url-input"
+                            placeholder="https://example.com"
+                            required
+                        >
+
+                        <button class="primary-btn full-width">
+                            Scan URL
+                        </button>
+
+                    </form>
+
+                    <!-- Search Form -->
+                    <form id="quick-search" class="scan-form hidden">
+
+                        <label for="search-input">
+                            VirusTotal Search Query
+                        </label>
+
+                        <input
+                            type="text"
+                            id="search-input"
+                            placeholder="domain:example.com"
+                            required
+                        >
+
+                        <small>
+                            Intelligence search requires appropriate API access.
+                        </small>
+
+                        <button class="primary-btn full-width">
+                            Search
+                        </button>
+
+                    </form>
+
+                    <div class="notice">
+                        Only upload files you are authorised to share.
+                        VirusTotal submissions may be shared with its
+                        security community.
+                    </div>
+
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="panel">
+
+                    <div class="panel-heading">
+                        <div>
+                            <h3>Recent Activity</h3>
+                            <p>Your latest scan activity.</p>
+                        </div>
+
+                        <button class="text-btn" data-view="history">
+                            View All →
+                        </button>
+                    </div>
+
+                    <div id="recent-list">
+                        <div class="empty-state">
+                            No scans yet. Start by scanning a file or URL.
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- Scanner Page -->
+        <section id="scanner-view" class="view hidden">
+
+            <div class="welcome-row">
+                <div>
+                    <h2>Threat Scanner</h2>
+                    <p>
+                        Submit files and URLs or search threat intelligence.
+                    </p>
+                </div>
+            </div>
+
+            <div class="panel scanner-panel">
+
+                <div class="scan-tabs">
+                    <button class="scan-tab active" data-tab="file">
+                        File Scan
+                    </button>
+
+                    <button class="scan-tab" data-tab="url">
+                        URL Scan
+                    </button>
+
+                    <button class="scan-tab" data-tab="search">
+                        Search
+                    </button>
+                </div>
+
+                <div id="wide-file" class="scan-form">
+
+                    <label class="dropzone" for="wide-file-input">
+                        <span class="upload-icon">↑</span>
+                        <strong>Select a file</strong>
+                        <small>Maximum supported demo upload: 32 MB.</small>
+
+                        <span id="wide-file-name">
+                            No file selected
+                        </span>
+                    </label>
+
+                    <input type="file" id="wide-file-input">
+
+                    <button class="primary-btn" id="wide-file-scan-btn">
+                        Analyse File
+                    </button>
+
+                </div>
+
+                <form id="wide-url" class="scan-form hidden">
+
+                    <label for="wide-url-input">Website URL</label>
+
+                    <input
+                        type="url"
+                        id="wide-url-input"
+                        placeholder="https://example.com"
+                        required
+                    >
+
+                    <button class="primary-btn">Analyse URL</button>
+
+                </form>
+
+                <form id="wide-search" class="scan-form hidden">
+
+                    <label for="wide-search-input">Search Query</label>
+
+                    <input
+                        type="text"
+                        id="wide-search-input"
+                        placeholder="domain:example.com"
+                        required
+                    >
+
+                    <button class="primary-btn">Run Search</button>
+
+                </form>
+
+            </div>
+
+            <div id="result-area"
+                 class="panel result-panel hidden"
+                 aria-live="polite">
+            </div>
+
+        </section>
+
+        <!-- History Page -->
+        <section id="history-view" class="view hidden">
+
+            <div class="welcome-row">
+                <div>
+                    <h2>Scan History</h2>
+                    <p>Review scans performed in this browser session.</p>
+                </div>
+
+                <button class="secondary-btn" id="clear-history">
+                    Clear History
+                </button>
+            </div>
+
+            <div class="panel">
+                <div id="history-list">
+                    <div class="empty-state">
+                        No scan history available.
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <div id="toast" class="toast" role="status"></div>
+
+        <footer>
+            Sentinel Dashboard · Educational Prototype
+        </footer>
+
+    </main>
+
+</div>
+
+<script src="app.js"></script>
+
+</body>
+</html>
