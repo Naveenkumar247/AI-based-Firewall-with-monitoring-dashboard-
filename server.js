@@ -7,79 +7,88 @@ const path = require("path");
 const app = express();
 
 const PORT = Number(process.env.PORT || 3000);
-
-const VIRUSTOTAL_BASE =
-    "https://www.virustotal.com/api/v3";
-
 const API_KEY = process.env.VIRUSTOTAL_API_KEY;
 
+const VIRUSTOTAL_BASE = "https://www.virustotal.com/api/v3";
 
-// Store uploaded files in memory, not in a public folder.
-const upload = multer({
-    storage: multer.memoryStorage(),
+const MAX_FILE_SIZE = 32 * 1024 * 1024;
 
-    limits: {
-        fileSize: 32 * 1024 * 1024
-    }
-});
+// --------------------------------------------------
+// Middleware
+// --------------------------------------------------
 
 app.disable("x-powered-by");
 
-app.use(express.json({
-    limit: "1mb"
+app.use(express.json({ limit: "1mb" }));
+
+app.use(express.static(__dirname, {
+    index: "index.html"
 }));
 
-app.use(express.static(__dirname));
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: MAX_FILE_SIZE
+    }
+});
 
+// --------------------------------------------------
+// API key validation
+// --------------------------------------------------
 
-// Require a configured API key
 function requireApiKey(req, res, next) {
     if (!API_KEY) {
         return res.status(503).json({
             error:
-                "VirusTotal API key is missing. Configure your .env file."
+                "VirusTotal API key is missing. Configure VIRUSTOTAL_API_KEY in Render Environment."
         });
     }
 
     next();
 }
 
+// --------------------------------------------------
+// VirusTotal API helper
+// --------------------------------------------------
 
-// Send a request to VirusTotal
 async function vtRequest(endpoint, options = {}) {
     const response = await fetch(
         `${VIRUSTOTAL_BASE}${endpoint}`,
         {
             ...options,
-
             headers: {
                 "x-apikey": API_KEY,
+                "accept": "application/json",
                 ...(options.headers || {})
-            }
+            },
+            signal: AbortSignal.timeout(30000)
         }
     );
 
-    const text = await response.text();
+    const responseText = await response.text();
 
     let data = {};
 
     try {
-        data = text ? JSON.parse(text) : {};
+        data = responseText
+            ? JSON.parse(responseText)
+            : {};
     } catch {
         data = {
-            message: text
+            message: responseText
         };
     }
 
     if (!response.ok) {
-        const message =
+        const apiMessage =
             data?.error?.message ||
             data?.message ||
             `VirusTotal returned HTTP ${response.status}`;
 
-        const error = new Error(message);
+        const error = new Error(apiMessage);
 
         error.status = response.status;
+        error.apiCode = data?.error?.code;
 
         throw error;
     }
@@ -87,22 +96,29 @@ async function vtRequest(endpoint, options = {}) {
     return data;
 }
 
+// --------------------------------------------------
+// Error response helper
+// --------------------------------------------------
 
-// Return a safe error message to the frontend
 function sendVtError(res, error) {
+    console.error(
+        "VirusTotal API error:",
+        error.status || "",
+        error.message
+    );
+
     let status = 502;
 
     if (
-        error.status === 401 ||
-        error.status === 403 ||
-        error.status === 429
-    ) {
-        status = error.status;
-    } else if (
+        Number.isInteger(error.status) &&
         error.status >= 400 &&
         error.status < 500
     ) {
         status = error.status;
+    }
+
+    if (error.name === "TimeoutError") {
+        status = 504;
     }
 
     res.status(status).json({
@@ -110,17 +126,23 @@ function sendVtError(res, error) {
     });
 }
 
+// --------------------------------------------------
+// Health check
+// --------------------------------------------------
 
-// Backend health endpoint
 app.get("/api/health", (req, res) => {
     res.json({
         ok: true,
+        service: "Sentinel Firewall Dashboard",
         apiKeyConfigured: Boolean(API_KEY)
     });
 });
 
+// --------------------------------------------------
+// File submission
+// POST /api/scan/file
+// --------------------------------------------------
 
-// File scanning endpoint
 app.post(
     "/api/scan/file",
     requireApiKey,
@@ -150,7 +172,7 @@ app.post(
                 body: form
             });
 
-            res.json(result);
+            res.status(200).json(result);
 
         } catch (error) {
             sendVtError(res, error);
@@ -158,8 +180,11 @@ app.post(
     }
 );
 
+// --------------------------------------------------
+// URL submission
+// POST /api/scan/url
+// --------------------------------------------------
 
-// URL scanning endpoint
 app.post(
     "/api/scan/url",
     requireApiKey,
@@ -202,14 +227,42 @@ app.post(
 
             const result = await vtRequest("/urls", {
                 method: "POST",
-
                 headers: {
                     "Content-Type":
                         "application/x-www-form-urlencoded"
                 },
-
-                body
+                body: body.toString()
             });
+
+            res.status(200).json(result);
+
+        } catch (error) {
+            sendVtError(res, error);
+        }
+    }
+);
+
+// --------------------------------------------------
+// Retrieve analysis status
+// GET /api/analysis/:id
+// --------------------------------------------------
+
+app.get(
+    "/api/analysis/:id",
+    requireApiKey,
+    async (req, res) => {
+        const id = req.params.id;
+
+        if (!id || id.length > 200) {
+            return res.status(400).json({
+                error: "Invalid analysis ID."
+            });
+        }
+
+        try {
+            const result = await vtRequest(
+                `/analyses/${encodeURIComponent(id)}`
+            );
 
             res.json(result);
 
@@ -219,8 +272,73 @@ app.post(
     }
 );
 
+// --------------------------------------------------
+// Retrieve completed file report
+// GET /api/report/file/:id
+// --------------------------------------------------
 
-// VirusTotal Intelligence search endpoint
+app.get(
+    "/api/report/file/:id",
+    requireApiKey,
+    async (req, res) => {
+        const id = req.params.id;
+
+        // A file report requires a SHA-256 hash.
+        if (!/^[a-fA-F0-9]{64}$/.test(id)) {
+            return res.status(400).json({
+                error: "A valid SHA-256 file hash is required."
+            });
+        }
+
+        try {
+            const result = await vtRequest(
+                `/files/${encodeURIComponent(id)}`
+            );
+
+            res.json(result);
+
+        } catch (error) {
+            sendVtError(res, error);
+        }
+    }
+);
+
+// --------------------------------------------------
+// Retrieve completed URL report
+// GET /api/report/url/:id
+// --------------------------------------------------
+
+app.get(
+    "/api/report/url/:id",
+    requireApiKey,
+    async (req, res) => {
+        const id = req.params.id;
+
+        // VirusTotal URL IDs are URL-safe Base64 strings.
+        if (!/^[a-zA-Z0-9_-]{1,500}$/.test(id)) {
+            return res.status(400).json({
+                error: "Invalid VirusTotal URL identifier."
+            });
+        }
+
+        try {
+            const result = await vtRequest(
+                `/urls/${encodeURIComponent(id)}`
+            );
+
+            res.json(result);
+
+        } catch (error) {
+            sendVtError(res, error);
+        }
+    }
+);
+
+// --------------------------------------------------
+// VirusTotal Intelligence search
+// GET /api/search?q=domain:example.com
+// --------------------------------------------------
+
 app.get(
     "/api/search",
     requireApiKey,
@@ -239,16 +357,15 @@ app.get(
         if (query.length > 500) {
             return res.status(400).json({
                 error:
-                    "Search query exceeds the 500-character limit."
+                    "Search query must not exceed 500 characters."
             });
         }
 
         try {
-            const endpoint =
+            const result = await vtRequest(
                 "/intelligence/search?query=" +
-                encodeURIComponent(query);
-
-            const result = await vtRequest(endpoint);
+                encodeURIComponent(query)
+            );
 
             res.json(result);
 
@@ -258,12 +375,21 @@ app.get(
     }
 );
 
+// --------------------------------------------------
+// Handle file upload errors
+// --------------------------------------------------
 
-// Handle upload errors
 app.use((error, req, res, next) => {
     if (error.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({
-            error: "File exceeds the 32 MB upload limit."
+            error:
+                "File exceeds the 32 MB upload limit."
+        });
+    }
+
+    if (error instanceof multer.MulterError) {
+        return res.status(400).json({
+            error: error.message
         });
     }
 
@@ -274,10 +400,16 @@ app.use((error, req, res, next) => {
     });
 });
 
+// --------------------------------------------------
+// Start server
+// --------------------------------------------------
 
-// Start the server
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
     console.log(
-        `Sentinel dashboard running at http://localhost:${PORT}`
+        `Sentinel Dashboard running on port ${PORT}`
+    );
+
+    console.log(
+        `VirusTotal API key configured: ${Boolean(API_KEY)}`
     );
 });
